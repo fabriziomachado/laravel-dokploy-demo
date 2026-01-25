@@ -2,9 +2,9 @@
 set -e
 
 # Create database if not exists
-if [ ! -f /app/database/database.sqlite ]; then
+if [ ! -f /app/storage/database.sqlite ]; then
     echo "Creating database.sqlite..."
-    touch /app/database/database.sqlite
+    touch /app/storage/database.sqlite
 fi
 
 # Run migrations

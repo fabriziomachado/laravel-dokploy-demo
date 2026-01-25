@@ -4,17 +4,14 @@ services:
     ports:
       - "8001:80"
     volumes:
-      - .:/app
       - laravel_storage:/app/storage
-      - laravel_database:/app/database
     environment:
       APP_ENV: production
       APP_DEBUG: false
       APP_KEY: ${APP_KEY}
       DB_CONNECTION: sqlite
-      DB_DATABASE: /app/database/database.sqlite
+      DB_DATABASE: /app/storage/database.sqlite
     restart: always
 
 volumes:
   laravel_storage:
-  laravel_database:
