@@ -9,7 +9,7 @@
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-gray-800">Uploaded Files</h1>
         <a href="{{ route('files.create') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-            Upload New File
+            Upload File
         </a>
     </div>
 
