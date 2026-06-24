@@ -1,0 +1,121 @@
+# docker-stack.yml — deploy local simulando o Dokploy com Docker Swarm
+#
+# Pré-requisitos:
+#   docker swarm init
+#   docker run -d -p 5000:5000 --name registry --restart=always registry:2
+#   docker build -t localhost:5000/laravel-app:latest .
+#   docker push localhost:5000/laravel-app:latest
+#
+# Deploy:
+#   export APP_KEY=base64:... DB_PASSWORD=secret TAG=$(git rev-parse --short HEAD)
+#   docker stack deploy -c docker-stack.yml laravel-demo
+#
+# Ou via script:
+#   sh scripts/deploy.sh     # build + tag + push + rolling update
+#   sh scripts/rollback.sh   # rollback para versão anterior
+#   sh scripts/rollback.sh --list   # listar tags disponíveis
+#
+# Diferenças em relação ao docker-compose.yml:
+#   - Usa a imagem do registry local (localhost:5000) em vez de build: .
+#   - Remove depends_on (ignorado no Swarm; o entrypoint.sh aguarda o DB)
+#   - Remove healthcheck de nível de serviço (gerenciado pelo Swarm via restart_policy)
+#   - Usa seções deploy: com replicas e restart_policy
+
+services:
+  app:
+    image: localhost:5000/laravel-app:${TAG:-latest}
+    ports:
+      - "8001:8001"
+    volumes:
+      - laravel_storage:/app/storage/framework
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${APP_URL:-http://localhost:8001}
+      APP_KEY: ${APP_KEY}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      # Database
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:-laravel}
+      DB_USERNAME: ${DB_USERNAME:-laravel}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Storage (MinIO / S3)
+      FILESYSTEM_DISK: s3
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_BUCKET: ${MINIO_BUCKET:-laravel}
+      AWS_ENDPOINT: http://minio:9000
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
+      # Sessions via DB (seguro para multi-nó)
+      SESSION_DRIVER: database
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      update_config:
+        parallelism: 1       # atualiza uma réplica por vez (rolling update)
+        delay: 10s
+        failure_action: rollback
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-laravel}
+      POSTGRES_USER: ${DB_USERNAME:-laravel}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.role == manager  # garante que o volume postgres_data fique sempre no mesmo nó
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.role == manager  # garante que o volume minio_data fique sempre no mesmo nó
+
+  minio-init:
+    image: minio/mc:latest
+    entrypoint: >
+      /bin/sh -c "
+        sleep 5;
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin};
+        mc mb --ignore-existing local/$${MINIO_BUCKET:-laravel};
+        echo 'Bucket ready.';
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-laravel}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none  # roda uma vez só, não reinicia
+
+volumes:
+  laravel_storage:
+  postgres_data:
+  minio_data:
