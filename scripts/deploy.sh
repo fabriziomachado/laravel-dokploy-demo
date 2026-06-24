@@ -21,6 +21,13 @@ SERVICE="${STACK}_app"
 # ── Tag ────────────────────────────────────────────────────────────────────────
 if [ -n "$1" ]; then
   TAG="$1"
+  # Se a tag já existe no registry, usá-la diretamente sem rebuildar.
+  # Rebuildar com uma SHA antiga geraria uma imagem mentirosa (código diferente do commit).
+  if curl -sf "http://${REGISTRY}/v2/${IMAGE}/manifests/${TAG}" > /dev/null 2>&1; then
+    echo "Tag '${TAG}' já existe no registry — pulando build e fazendo deploy direto."
+    echo "(Para rebuildar, use: docker image rm localhost:5000/${IMAGE}:${TAG} primeiro)"
+    SKIP_BUILD=1
+  fi
 else
   TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "manual")
 fi
@@ -50,20 +57,25 @@ if ! curl -s http://${REGISTRY}/v2/ > /dev/null 2>&1; then
 fi
 
 # ── Build ──────────────────────────────────────────────────────────────────────
-echo "▶ [1/4] Building image..."
-docker build \
-  -t "${FULL_IMAGE}:${TAG}" \
-  -t "${FULL_IMAGE}:latest" \
-  .
-echo "✔ Build concluído: ${FULL_IMAGE}:${TAG}"
-echo ""
+if [ "${SKIP_BUILD}" != "1" ]; then
+  echo "▶ [1/4] Building image..."
+  docker build \
+    -t "${FULL_IMAGE}:${TAG}" \
+    -t "${FULL_IMAGE}:latest" \
+    .
+  echo "✔ Build concluído: ${FULL_IMAGE}:${TAG}"
+  echo ""
 
-# ── Push ───────────────────────────────────────────────────────────────────────
-echo "▶ [2/4] Pushing para o registry..."
-docker push "${FULL_IMAGE}:${TAG}"
-docker push "${FULL_IMAGE}:latest"
-echo "✔ Push concluído"
-echo ""
+  echo "▶ [2/4] Pushing para o registry..."
+  docker push "${FULL_IMAGE}:${TAG}"
+  docker push "${FULL_IMAGE}:latest"
+  echo "✔ Push concluído"
+  echo ""
+else
+  echo "▶ [1/4] Build ignorado (tag já existe no registry)"
+  echo "▶ [2/4] Push ignorado"
+  echo ""
+fi
 
 # ── Deploy ou primeiro deploy ──────────────────────────────────────────────────
 if docker stack ls --format '{{.Name}}' | grep -q "^${STACK}$"; then
