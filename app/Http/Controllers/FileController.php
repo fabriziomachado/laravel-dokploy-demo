@@ -11,7 +11,8 @@ class FileController extends Controller
     public function index()
     {
         $files = File::latest()->get();
-        return view('files.index', compact('files'));
+        $containerId = gethostname();
+        return view('files.index', compact('files', 'containerId'));
     }
 
     public function create()
