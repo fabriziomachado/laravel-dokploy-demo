@@ -1,0 +1,46 @@
+# Environment files (secrets must be injected at runtime)
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# PHP dependencies (rebuilt inside the image)
+/vendor
+
+# Node dependencies and build artifacts
+/node_modules
+
+# Laravel storage (mounted as volume in production)
+/storage/*.key
+/storage/app
+/storage/framework/cache
+/storage/framework/sessions
+/storage/framework/views
+/storage/logs
+
+# Database files
+*.sqlite
+*.sqlite-journal
+
+# Docker files (not needed inside the image)
+docker-compose.yml
+docker-stack.yml
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+*.md
+
+# IDE and editor configs
+.editorconfig
+.idea
+.vscode
+
+# Tests (not needed in production image)
+/tests
+phpunit.xml
