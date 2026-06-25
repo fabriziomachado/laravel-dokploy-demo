@@ -29,9 +29,17 @@ services:
 
   traefik-manager:
     image: ghcr.io/chr0nzz/traefik-manager:latest
+    command:
+      - gunicorn
+      - --bind
+      - 0.0.0.0:5000
+      - --workers
+      - "1"
+      - --log-level
+      - info
+      - app:app
     environment:
       COOKIE_SECURE: "false"
-      GUNICORN_CMD_ARGS: "--workers 1"
       TM_TRAEFIK_URL: http://traefik:8080
       WEB_CONCURRENCY: "1"
     volumes:
