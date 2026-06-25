@@ -5,7 +5,57 @@ incluindo as lições aprendidas durante o desenvolvimento.
 
 ---
 
-## Arquitetura
+## Visão Geral
+
+```mermaid
+flowchart LR
+    Browser(["🌐 Browser / Cliente"])
+
+    subgraph SERVER["Servidor (VPS / Dokploy)"]
+        direction TB
+
+        subgraph TRAEFIK["Traefik v3.6"]
+            T80[":80\nHTTP"]
+            T443[":443\nHTTPS"]
+            T80 -->|"redirect permanente"| T443
+        end
+
+        subgraph SWARM["Docker Swarm"]
+            direction TB
+            A1["app.1"]
+            A2["app.2"]
+            A3["app.3"]
+        end
+
+        PG[("PostgreSQL")]
+        MN[("MinIO S3")]
+    end
+
+    subgraph REG["Registry :5000"]
+        IMG["app:sha\napp:latest"]
+    end
+
+    Browser -->|"HTTPS"| T443
+    T443 -->|"round-robin\npor requisição"| A1
+    T443 -->|"round-robin\npor requisição"| A2
+    T443 -->|"round-robin\npor requisição"| A3
+
+    A1 & A2 & A3 --- PG
+    A1 & A2 & A3 --- MN
+
+    DEV(["💻 Dev"])
+    DEV -->|"build + push"| REG
+    REG -->|"docker stack\ndeploy"| SWARM
+
+    style TRAEFIK fill:#dbeafe,stroke:#3b82f6
+    style SWARM fill:#dcfce7,stroke:#22c55e
+    style SERVER fill:#f8fafc,stroke:#94a3b8
+    style REG fill:#fef9c3,stroke:#eab308
+```
+
+---
+
+## Arquitetura Detalhada
 
 ```mermaid
 flowchart TD
