@@ -61,7 +61,7 @@ pronta para rodar localmente via Docker Compose e para deploy no
 
 | Serviço | Imagem | Porta | Finalidade |
 |---|---|---|---|
-| `traefik` | `traefik:v3.3` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + load balancer |
+| `traefik` | `traefik:v3.6` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + load balancer |
 | `traefik-manager` | `ghcr.io/chr0nzz/traefik-manager` | `8090` | UI para gerenciar rotas e middlewares |
 | `app` | Build do `Dockerfile` | `8001` (direto), `80` (via Traefik) | Aplicação Laravel (FrankenPHP) |
 | `postgres` | `postgres:16-alpine` | interno | Banco de dados |
