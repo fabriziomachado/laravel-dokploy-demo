@@ -1,0 +1,8 @@
+# Traefik dynamic configuration
+# Managed by traefik-manager — http://localhost:5000
+# Routes added here are applied without restarting Traefik (hot-reload via file.watch)
+
+http:
+  routers: {}
+  services: {}
+  middlewares: {}

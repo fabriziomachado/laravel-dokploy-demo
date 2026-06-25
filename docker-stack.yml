@@ -21,7 +21,54 @@
 #   - Remove healthcheck de nível de serviço (gerenciado pelo Swarm via restart_policy)
 #   - Usa seções deploy: com replicas e restart_policy
 
+configs:
+  traefik_static:
+    file: ./traefik/traefik.yml
+
 services:
+  traefik:
+    image: traefik:v3.3
+    ports:
+      - "80:80"      # entry point HTTP
+      - "8080:8080"  # dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_dynamic:/etc/traefik          # dynamic.yml gerenciado pelo traefik-manager
+      - traefik_logs:/var/log/traefik
+    configs:
+      - source: traefik_static
+        target: /etc/traefik/traefik.yml
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  traefik-manager:
+    image: ghcr.io/chr0nzz/traefik-manager:latest
+    ports:
+      - "5000:5000"
+    environment:
+      TRAEFIK_API_URL: http://traefik:8080
+      DOMAINS: ${APP_DOMAIN:-localhost}
+      CERT_RESOLVER: none
+      ADMIN_PASSWORD: ${TM_PASSWORD:-admin}
+      COOKIE_SECURE: "false"
+      CONFIG_PATH: /etc/traefik/dynamic.yml
+    volumes:
+      - traefik_dynamic:/etc/traefik
+      - tm_config:/app/config
+      - tm_backups:/app/backups
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
   app:
     image: localhost:5000/laravel-app:${TAG:-latest}
     ports:
@@ -61,6 +108,11 @@ services:
         parallelism: 1       # atualiza uma réplica por vez (rolling update)
         delay: 10s
         failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.laravel.rule=Host(`${APP_DOMAIN:-localhost}`)
+        - traefik.http.routers.laravel.entrypoints=web
+        - traefik.http.services.laravel.loadbalancer.server.port=8001
 
   postgres:
     image: postgres:16-alpine
@@ -119,3 +171,7 @@ volumes:
   laravel_storage:
   postgres_data:
   minio_data:
+  traefik_dynamic:
+  traefik_logs:
+  tm_config:
+  tm_backups:

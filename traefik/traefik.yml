@@ -1,0 +1,32 @@
+# Traefik static configuration
+# Works for both Docker Compose (providers.docker) and Docker Swarm (providers.swarm)
+
+api:
+  insecure: true   # exposes dashboard on :8080 — disable in production
+  dashboard: true
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  # Used by docker-compose.yml (non-Swarm)
+  docker:
+    exposedByDefault: false
+
+  # Used by docker-stack.yml (Swarm mode)
+  # network must match the stack overlay network: <stack-name>_default
+  swarm:
+    exposedByDefault: false
+    network: laravel-demo_default
+
+  # Dynamic config managed by traefik-manager UI
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+log:
+  level: INFO
+
+accessLog:
+  filePath: /var/log/traefik/access.log

@@ -1,8 +1,43 @@
 services:
+  traefik:
+    image: traefik:v3.3
+    ports:
+      - "80:80"      # entry point HTTP
+      - "8080:8080"  # dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml
+      - traefik_logs:/var/log/traefik
+    restart: always
+
+  traefik-manager:
+    image: ghcr.io/chr0nzz/traefik-manager:latest
+    ports:
+      - "5000:5000"
+    environment:
+      TRAEFIK_API_URL: http://traefik:8080
+      DOMAINS: localhost
+      CERT_RESOLVER: none
+      ADMIN_PASSWORD: ${TM_PASSWORD:-admin}
+      COOKIE_SECURE: "false"
+    volumes:
+      - ./traefik/dynamic.yml:/app/config/dynamic.yml
+      - tm_config:/app/config
+      - tm_backups:/app/backups
+    depends_on:
+      - traefik
+    restart: always
+
   app:
     build: .
     ports:
-      - "8001:8001"
+      - "8001:8001"  # acesso direto (sem Traefik)
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.laravel.rule=Host(`localhost`)
+      - traefik.http.routers.laravel.entrypoints=web
+      - traefik.http.services.laravel.loadbalancer.server.port=8001
     volumes:
       - laravel_storage:/app/storage/framework
     environment:
@@ -94,3 +129,6 @@ volumes:
   laravel_storage:
   postgres_data:
   minio_data:
+  traefik_logs:
+  tm_config:
+  tm_backups:
