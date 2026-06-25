@@ -10,7 +10,7 @@ pronta para rodar localmente via Docker Compose e para deploy no
 - **FrankenPHP** servindo a aplicação na porta `8001` (config no `Caddyfile`)
 - **PostgreSQL 16** como banco de dados, persistido em volume Docker
 - **MinIO** como storage de arquivos (S3-compatível), persistido em volume Docker
-- **Traefik v3** como reverse proxy com load balancing HTTP por requisição
+- **Traefik v3.6** como reverse proxy com load balancing HTTP por requisição (swarm provider)
 - **traefik-manager** como UI web para gerenciar rotas e middlewares do Traefik
 - **Docker / Docker Compose** para build e execução local
 - **Dokploy + Docker Swarm** para deploy remoto
@@ -61,7 +61,8 @@ pronta para rodar localmente via Docker Compose e para deploy no
 
 | Serviço | Imagem | Porta | Finalidade |
 |---|---|---|---|
-| `traefik` | `traefik:v3.6` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + load balancer |
+| `traefik` | `traefik:v3.6` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + round-robin por requisição (swarm provider) |
+| `traefik-init` | `alpine:latest` | — | Semeia `dynamic.yml` no volume na primeira execução |
 | `traefik-manager` | `ghcr.io/chr0nzz/traefik-manager` | `8090` | UI para gerenciar rotas e middlewares |
 | `app` | Build do `Dockerfile` | `8001` (direto), `80` (via Traefik) | Aplicação Laravel (FrankenPHP) |
 | `postgres` | `postgres:16-alpine` | interno | Banco de dados |
@@ -288,17 +289,19 @@ docker stack ps laravel-demo --filter "name=laravel-demo_app"
 
 ### 6. Verificar o load balancing
 
-O Traefik roteia `localhost:80` → Swarm VIP `app:8001` → as 3 réplicas via IPVS (LB por conexão). Para ver o round-robin por conexão, use a porta direta:
+O Traefik usa o **swarm provider** (Traefik v3.6+) para descobrir cada réplica individualmente e faz **round-robin por requisição HTTP** — sem precisar de `Connection: close`:
 
 ```bash
-# Porta 8001 (sem Traefik) — demonstra round-robin entre réplicas
+# Porta 80 via Traefik — round-robin real por requisição entre as 3 réplicas
 for i in $(seq 1 9); do
-  curl -sL http://localhost:8001/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
+  curl -sL http://localhost/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
 done
-# Resultado esperado: os 3 containers alternando
+# Resultado esperado: 3 containers diferentes alternando a cada requisição
 ```
 
-Através do Traefik na porta 80, o ráfego passa pelo Swarm VIP que faz IPVS connection-level load balancing. O container mostrado pode ser sempre o mesmo numa sessão, mas **muda entre sessões diferentes**.
+O container mostrado muda a cada requisição porque o Traefik conhece os IPs individuais das 3 réplicas (via `laravel@swarm`) e distribui o tráfego entre elas diretamente.
+
+> **Nota Docker Desktop/WSL2:** O swarm provider requer Traefik v3.6+. Versões anteriores falhavam com `Error response from daemon:` porque o Docker Desktop moderno (Engine 29+) rejeitou a API v1.24 usada pelo cliente Docker antigo. Corrigido no [Traefik issue #12253](https://github.com/traefik/traefik/issues/12253).
 
 ### traefik-manager
 
@@ -319,8 +322,8 @@ curl -s http://localhost:8080/api/http/routers | python3 -m json.tool | grep -E 
 ```
 
 Na UI do traefik-manager você pode:
-- Ver todas as rotas ativas (`laravel@file` → `Host(localhost)`)
-- Adicionar middlewares (rate limit, auth, CORS, headers) sem editar YAML
+- Ver todas as rotas ativas (`laravel@swarm` → `Host(localhost)` descoberta via swarm provider)
+- Adicionar middlewares (rate limit, auth, CORS, headers, redirect) sem editar YAML
 - Monitorar saúde dos backends em tempo real
 - Fazer backup e restaurar configurações
 
