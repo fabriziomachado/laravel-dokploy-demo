@@ -31,6 +31,7 @@ services:
     image: ghcr.io/chr0nzz/traefik-manager:latest
     environment:
       COOKIE_SECURE: "false"
+      GUNICORN_CMD_ARGS: "--workers 1"
       TM_TRAEFIK_URL: http://traefik:8080
       WEB_CONCURRENCY: "1"
     volumes:
