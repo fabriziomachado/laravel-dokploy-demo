@@ -1,5 +1,10 @@
 # Traefik static configuration
-# Works for both Docker Compose (providers.docker) and Docker Swarm (providers.swarm)
+#
+# Uses file provider only (no Docker socket required):
+# - Routes are defined in /etc/traefik/conf.d/*.yml (managed by traefik-manager)
+# - In Swarm mode: route to laravel-demo_app:8001 (Swarm VIP, LB between replicas)
+# - In Docker Compose: route to app:8001
+# - docker provider is used only when running via docker compose (non-Swarm)
 
 api:
   insecure: true   # exposes dashboard on :8080 — disable in production
@@ -10,19 +15,11 @@ entryPoints:
     address: ":80"
 
 providers:
-  # Used by docker-compose.yml (non-Swarm)
-  docker:
-    exposedByDefault: false
-
-  # Used by docker-stack.yml (Swarm mode)
-  # network must match the stack overlay network: <stack-name>_default
-  swarm:
-    exposedByDefault: false
-    network: laravel-demo_default
-
-  # Dynamic config managed by traefik-manager UI
+  # File provider: routes managed by traefik-manager UI (http://localhost:5000)
+  # Directory mode: loads all .yml files in conf.d, hot-reloads on changes
+  # Note: docker provider is intentionally omitted — routes are defined via file provider
   file:
-    filename: /etc/traefik/dynamic.yml
+    directory: /etc/traefik/conf.d
     watch: true
 
 log:

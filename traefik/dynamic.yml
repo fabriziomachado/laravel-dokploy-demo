@@ -1,8 +1,21 @@
 # Traefik dynamic configuration
 # Managed by traefik-manager — http://localhost:5000
 # Routes added here are applied without restarting Traefik (hot-reload via file.watch)
+#
+# In Swarm mode: 'laravel-demo_app' resolves to the Swarm VIP, which load-balances
+# across all app replicas automatically.
+# In Docker Compose: 'app' resolves directly to the single app container.
 
 http:
-  routers: {}
-  services: {}
-  middlewares: {}
+  routers:
+    laravel:
+      rule: "Host(`localhost`)"
+      entrypoints:
+        - web
+      service: laravel
+  services:
+    laravel:
+      loadBalancer:
+        servers:
+          # 'app' resolves in both docker-compose and docker-stack (Swarm VIP)
+          - url: "http://app:8001"

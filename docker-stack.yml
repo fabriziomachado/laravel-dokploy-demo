@@ -24,6 +24,8 @@
 configs:
   traefik_static:
     file: ./traefik/traefik.yml
+  traefik_dynamic_init:
+    file: ./traefik/dynamic.yml
 
 services:
   traefik:
@@ -32,8 +34,7 @@ services:
       - "80:80"      # entry point HTTP
       - "8080:8080"  # dashboard
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_dynamic:/etc/traefik          # dynamic.yml gerenciado pelo traefik-manager
+      - traefik_dynamic:/etc/traefik/conf.d   # dynamic configs gerenciados pelo traefik-manager
       - traefik_logs:/var/log/traefik
     configs:
       - source: traefik_static
@@ -56,9 +57,9 @@ services:
       CERT_RESOLVER: none
       ADMIN_PASSWORD: ${TM_PASSWORD:-admin}
       COOKIE_SECURE: "false"
-      CONFIG_PATH: /etc/traefik/dynamic.yml
+      CONFIG_PATH: /etc/traefik/conf.d/dynamic.yml
     volumes:
-      - traefik_dynamic:/etc/traefik
+      - traefik_dynamic:/etc/traefik/conf.d
       - tm_config:/app/config
       - tm_backups:/app/backups
     deploy:
@@ -108,11 +109,6 @@ services:
         parallelism: 1       # atualiza uma réplica por vez (rolling update)
         delay: 10s
         failure_action: rollback
-      labels:
-        - traefik.enable=true
-        - traefik.http.routers.laravel.rule=Host(`${APP_DOMAIN:-localhost}`)
-        - traefik.http.routers.laravel.entrypoints=web
-        - traefik.http.services.laravel.loadbalancer.server.port=8001
 
   postgres:
     image: postgres:16-alpine
@@ -148,6 +144,24 @@ services:
       placement:
         constraints:
           - node.role == manager  # garante que o volume minio_data fique sempre no mesmo nó
+
+  traefik-init:
+    image: alpine:latest
+    # Seeds dynamic.yml into the traefik_dynamic volume on first boot
+    command: >
+      sh -c '
+        cp /init/dynamic.yml /conf.d/dynamic.yml;
+        echo "Traefik dynamic config seeded."
+      '
+    volumes:
+      - traefik_dynamic:/conf.d
+    configs:
+      - source: traefik_dynamic_init
+        target: /init/dynamic.yml
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
 
   minio-init:
     image: minio/mc:latest
