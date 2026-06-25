@@ -5,6 +5,10 @@ services:
       - --api.dashboard=true
       - --api.insecure=true
       - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --providers.file.filename=/etc/traefik/dynamic/tls.yml
       - --providers.swarm=true
       - --providers.swarm.endpoint=unix:///var/run/docker.sock
       - --providers.swarm.exposedbydefault=false
@@ -14,12 +18,24 @@ services:
         published: 80
         protocol: tcp
         mode: ingress
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: ingress
       - target: 8080
         published: 8080
         protocol: tcp
         mode: ingress
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: traefik_tls
+        target: /etc/traefik/dynamic/tls.yml
+    secrets:
+      - source: local_tls_crt
+        target: local_tls_crt
+      - source: local_tls_key
+        target: local_tls_key
     networks:
       - public
     deploy:
@@ -39,7 +55,7 @@ services:
       - info
       - app:app
     environment:
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: "true"
       TM_TRAEFIK_URL: http://traefik:8080
       WEB_CONCURRENCY: "1"
     volumes:
@@ -50,8 +66,9 @@ services:
       labels:
         traefik.enable: "true"
         traefik.http.routers.traefik-manager.rule: Host(`manager.localhost`)
-        traefik.http.routers.traefik-manager.entrypoints: web
+        traefik.http.routers.traefik-manager.entrypoints: websecure
         traefik.http.routers.traefik-manager.service: traefik-manager
+        traefik.http.routers.traefik-manager.tls: "true"
         traefik.http.services.traefik-manager.loadbalancer.server.port: "5000"
 
   app:
@@ -59,7 +76,7 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      APP_URL: http://laravel.localhost
+      APP_URL: https://laravel.localhost
       APP_KEY: ${APP_KEY:?Set APP_KEY before deploying the stack}
       TRUSTED_PROXIES: "*"
       RUN_MIGRATIONS: "false"
@@ -73,7 +90,7 @@ services:
       REDIS_PORT: "6379"
       REDIS_CLIENT: phpredis
       SESSION_DRIVER: redis
-      SESSION_SECURE_COOKIE: "false"
+      SESSION_SECURE_COOKIE: "true"
       CACHE_STORE: redis
       QUEUE_CONNECTION: redis
       FILESYSTEM_DISK: s3
@@ -82,7 +99,7 @@ services:
       AWS_DEFAULT_REGION: us-east-1
       AWS_BUCKET: laravel-demo
       AWS_ENDPOINT: http://minio:9000
-      AWS_URL: http://minio.localhost/laravel-demo
+      AWS_URL: https://minio.localhost/laravel-demo
       AWS_USE_PATH_STYLE_ENDPOINT: "true"
     networks:
       - public
@@ -94,8 +111,9 @@ services:
       labels:
         traefik.enable: "true"
         traefik.http.routers.laravel.rule: Host(`laravel.localhost`)
-        traefik.http.routers.laravel.entrypoints: web
+        traefik.http.routers.laravel.entrypoints: websecure
         traefik.http.routers.laravel.service: laravel
+        traefik.http.routers.laravel.tls: "true"
         traefik.http.services.laravel.loadbalancer.server.port: "8001"
 
   migrate:
@@ -104,7 +122,7 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      APP_URL: http://laravel.localhost
+      APP_URL: https://laravel.localhost
       APP_KEY: ${APP_KEY:?Set APP_KEY before deploying the stack}
       TRUSTED_PROXIES: "*"
       RUN_MIGRATIONS: "false"
@@ -126,6 +144,7 @@ services:
       AWS_DEFAULT_REGION: us-east-1
       AWS_BUCKET: laravel-demo
       AWS_ENDPOINT: http://minio:9000
+      AWS_URL: https://minio.localhost/laravel-demo
       AWS_USE_PATH_STYLE_ENDPOINT: "true"
     networks:
       - private
@@ -166,6 +185,8 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BROWSER_REDIRECT_URL: https://minio-console.localhost
+      MINIO_SERVER_URL: https://minio.localhost
     volumes:
       - minio_data:/data
     networks:
@@ -175,12 +196,14 @@ services:
       labels:
         traefik.enable: "true"
         traefik.http.routers.minio.rule: Host(`minio.localhost`)
-        traefik.http.routers.minio.entrypoints: web
+        traefik.http.routers.minio.entrypoints: websecure
         traefik.http.routers.minio.service: minio
+        traefik.http.routers.minio.tls: "true"
         traefik.http.services.minio.loadbalancer.server.port: "9000"
         traefik.http.routers.minio-console.rule: Host(`minio-console.localhost`)
-        traefik.http.routers.minio-console.entrypoints: web
+        traefik.http.routers.minio-console.entrypoints: websecure
         traefik.http.routers.minio-console.service: minio-console
+        traefik.http.routers.minio-console.tls: "true"
         traefik.http.services.minio-console.loadbalancer.server.port: "9001"
 
   minio-create-bucket:
@@ -214,3 +237,13 @@ volumes:
   redis_data:
   minio_data:
   traefik_manager_data:
+
+configs:
+  traefik_tls:
+    file: ./docker/traefik/dynamic/tls.yml
+
+secrets:
+  local_tls_crt:
+    file: ./docker/traefik/certs/local.crt
+  local_tls_key:
+    file: ./docker/traefik/certs/local.key

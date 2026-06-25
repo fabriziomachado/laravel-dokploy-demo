@@ -16,6 +16,8 @@
 /public/build
 /public/hot
 /public/storage
+/docker/traefik/certs/*.crt
+/docker/traefik/certs/*.key
 /storage/*.key
 /storage/pail
 /vendor

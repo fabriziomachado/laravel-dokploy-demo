@@ -1,6 +1,6 @@
 # Laravel Dokploy Demo
 
-Este laboratorio simula localmente uma arquitetura parecida com um deploy feito pelo Dokploy: a aplicacao Laravel roda em replicas no Docker Swarm, o Traefik faz o roteamento HTTP, um registry local distribui a imagem da app para o cluster, e os estados compartilhados ficam fora dos containers da aplicacao.
+Este laboratorio simula localmente uma arquitetura parecida com um deploy feito pelo Dokploy: a aplicacao Laravel roda em replicas no Docker Swarm, o Traefik faz o roteamento HTTPS, um registry local distribui a imagem da app para o cluster, e os estados compartilhados ficam fora dos containers da aplicacao.
 
 A ideia principal e evitar que a aplicacao dependa de SQLite, uploads locais ou sessoes em disco quando estiver escalada. Para isso, a stack usa Postgres, Redis e MinIO.
 
@@ -11,8 +11,10 @@ Fluxo de requisicao e dependencias:
 ```text
 Browser
   |
+  | HTTPS :443
   v
-Traefik :80
+Traefik
+  |-- HTTP :80 -> HTTPS redirect
   |
   v
 Laravel app replicas
@@ -27,7 +29,7 @@ Registry local -> armazena a imagem usada pelas replicas
 
 Servicos principais:
 
-- `traefik`: reverse proxy HTTP da stack. Le labels dos servicos Swarm e publica as rotas.
+- `traefik`: reverse proxy HTTPS da stack. Le labels dos servicos Swarm, publica as rotas e redireciona HTTP para HTTPS.
 - `traefik-manager`: interface para visualizar e gerenciar o Traefik.
 - `app`: replicas da aplicacao Laravel com FrankenPHP.
 - `migrate`: job Swarm que roda `php artisan migrate --force` uma unica vez.
@@ -62,6 +64,8 @@ Esse valor pode ser sobrescrito com `APP_IMAGE`.
 - `docker-stack.registry.yml`: registry local usado pelo Swarm.
 - `docker-stack.local.yml`: stack Swarm da aplicacao e servicos auxiliares.
 - `docker-compose.commands.yml`: runners para Composer, Artisan e Node sem depender do SO local.
+- `docker/traefik/dynamic/tls.yml`: configuracao dinamica do Traefik para carregar o certificado TLS local.
+- `scripts/generate-local-tls.sh`: gera o certificado self-signed local usado pelo Traefik.
 - `docker/php-cli/Dockerfile`: imagem CLI para comandos de desenvolvimento e teste.
 
 ## Comandos Sem PHP/Node Local
@@ -120,6 +124,23 @@ Por padrao, `docker-stack.local.yml` usa `APP_IMAGE=localhost:5000/laravel-dokpl
 export APP_IMAGE=localhost:5000/laravel-dokploy-demo:${DEPLOY_TAG}
 ```
 
+### Certificado HTTPS Local
+
+A stack usa HTTPS pelo Traefik com um certificado self-signed local. Gere o certificado antes de publicar a stack da aplicacao:
+
+```bash
+./scripts/generate-local-tls.sh
+```
+
+O script cria os arquivos ignorados pelo Git em:
+
+```text
+docker/traefik/certs/local.crt
+docker/traefik/certs/local.key
+```
+
+O certificado inclui SANs para `laravel.localhost`, `manager.localhost`, `minio.localhost`, `minio-console.localhost`, `localhost` e `127.0.0.1`. Como ele e self-signed, o navegador deve exibir um aviso de certificado nao confiavel. Para testes por linha de comando, use `curl -k`.
+
 ### Estrategia De Tags E Rollback
 
 A stack usa duas categorias de tags:
@@ -155,8 +176,8 @@ Rollback de imagem nao desfaz migracoes de banco. Se uma versao aplicou migracoe
 As paginas de listagem e upload mostram o hostname do container que atendeu a requisicao:
 
 ```text
-http://laravel.localhost/files
-http://laravel.localhost/files/create
+https://laravel.localhost/files
+https://laravel.localhost/files/create
 ```
 
 Com mais de uma replica da aplicacao, recarregue a pagina algumas vezes e observe o valor `Container`. Ele ajuda a validar se o Traefik esta distribuindo as requisicoes entre replicas diferentes apos um novo deploy ou rollback.
@@ -171,18 +192,25 @@ docker stack deploy -c docker-stack.local.yml laravel-demo
 
 Servicos expostos pelo Traefik:
 
-- Aplicacao Laravel: `http://laravel.localhost`
+- Aplicacao Laravel: `https://laravel.localhost`
 - Traefik dashboard: `http://localhost:8080`
-- Traefik Manager: `http://manager.localhost`
-- MinIO API: `http://minio.localhost`
-- MinIO console: `http://minio-console.localhost`
+- Traefik Manager: `https://manager.localhost`
+- MinIO API: `https://minio.localhost`
+- MinIO console: `https://minio-console.localhost`
+
+Valide o HTTPS e o redirecionamento HTTP:
+
+```bash
+curl -k https://laravel.localhost
+curl -I http://laravel.localhost
+```
 
 ### Acesso Ao Traefik Manager
 
 Abra o Traefik Manager em:
 
 ```text
-http://manager.localhost
+https://manager.localhost
 ```
 
 Na primeira inicializacao, o Traefik Manager gera uma senha temporaria nos logs do servico. Para consultar a senha atual:
@@ -199,8 +227,8 @@ Nesta simulacao, o Traefik Manager e iniciado com um unico worker do Gunicorn. A
 
 O MinIO expõe a API S3 e o console web:
 
-- API S3: `http://minio.localhost`
-- Console web: `http://minio-console.localhost`
+- API S3: `https://minio.localhost`
+- Console web: `https://minio-console.localhost`
 
 Credenciais padrao da stack:
 
