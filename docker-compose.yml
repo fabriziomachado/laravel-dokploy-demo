@@ -2,14 +2,36 @@ services:
   traefik:
     image: traefik:v3.6
     ports:
-      - "80:80"      # entry point HTTP
+      - "80:80"      # HTTP (redireciona para HTTPS)
+      - "443:443"    # HTTPS
       - "8080:8080"  # dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik:/etc/traefik/conf.d
+      - traefik_certs:/etc/traefik/certs:ro
       - traefik_logs:/var/log/traefik
     restart: always
+
+  traefik-certs-init:
+    image: alpine:latest
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /certs/cert.pem ]; then
+          apk add --no-cache openssl >/dev/null 2>&1
+          openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+            -keyout /certs/key.pem -out /certs/cert.pem \
+            -subj '/CN=localhost/O=Dev/C=BR' \
+            -addext 'subjectAltName=DNS:localhost,DNS:*.localhost,IP:127.0.0.1' \
+            2>/dev/null
+          echo 'Certificado TLS gerado (valido 10 anos).'
+        else
+          echo 'Certificado ja existe, reutilizando.'
+        fi
+    volumes:
+      - traefik_certs:/certs
 
   traefik-manager:
     image: ghcr.io/chr0nzz/traefik-manager:latest
@@ -124,6 +146,7 @@ volumes:
   laravel_storage:
   postgres_data:
   minio_data:
+  traefik_certs:
   traefik_logs:
   tm_config:
   tm_backups:

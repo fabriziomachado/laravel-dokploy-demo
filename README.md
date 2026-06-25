@@ -10,7 +10,8 @@ pronta para rodar localmente via Docker Compose e para deploy no
 - **FrankenPHP** servindo a aplicação na porta `8001` (config no `Caddyfile`)
 - **PostgreSQL 16** como banco de dados, persistido em volume Docker
 - **MinIO** como storage de arquivos (S3-compatível), persistido em volume Docker
-- **Traefik v3.6** como reverse proxy com load balancing HTTP por requisição (swarm provider)
+- **Traefik v3.6** como reverse proxy HTTPS com load balancing HTTP por requisição (swarm provider)
+- **TLS autoassinado** gerado no boot via container Alpine + openssl (sem instalação no host)
 - **traefik-manager** como UI web para gerenciar rotas e middlewares do Traefik
 - **Docker / Docker Compose** para build e execução local
 - **Dokploy + Docker Swarm** para deploy remoto
@@ -61,7 +62,8 @@ pronta para rodar localmente via Docker Compose e para deploy no
 
 | Serviço | Imagem | Porta | Finalidade |
 |---|---|---|---|
-| `traefik` | `traefik:v3.6` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + round-robin por requisição (swarm provider) |
+| `traefik` | `traefik:v3.6` | `80` (redirect), `443` (HTTPS), `8080` (Dashboard) | Reverse proxy + TLS + round-robin por requisição |
+| `traefik-certs-init` | `alpine:latest` | — | Gera certificado TLS autoassinado (openssl, só na primeira vez) |
 | `traefik-init` | `alpine:latest` | — | Semeia `dynamic.yml` no volume na primeira execução |
 | `traefik-manager` | `ghcr.io/chr0nzz/traefik-manager` | `8090` | UI para gerenciar rotas e middlewares |
 | `app` | Build do `Dockerfile` | `8001` (direto), `80` (via Traefik) | Aplicação Laravel (FrankenPHP) |
@@ -127,11 +129,14 @@ docker compose run --rm --entrypoint php app artisan key:generate --show
    ```
 
 4. Acesse:
-   - Aplicação via Traefik (load balancing por requisição): <http://localhost>
+   - Aplicação via Traefik (HTTPS + round-robin): <https://localhost> ⚠️ aceite o aviso do browser
+   - HTTP redireciona automaticamente para HTTPS: <http://localhost>
    - Aplicação direta (sem proxy): <http://localhost:8001>
    - Traefik Dashboard: <http://localhost:8080>
    - traefik-manager: <http://localhost:8090> (senha: `admin`)
    - MinIO Console: <http://localhost:9001> (usuário: `minioadmin` / senha: `minioadmin`)
+
+   > **Aviso do browser:** Na primeira vez em `https://localhost` o browser exibe "Sua conexão não é particular" porque o certificado é autoassinado. Clique em **Avançado → Continuar para localhost**. Não é necessário instalar nada no sistema operacional.
 
 Comandos úteis:
 
@@ -198,6 +203,7 @@ No boot, o `entrypoint.sh` aguarda o PostgreSQL ficar disponível, roda as migra
 | `postgres_data` | Dados do banco | Fixo no manager via placement constraint |
 | `minio_data` | Arquivos (uploads) | Fixo no manager via placement constraint |
 | `laravel_storage` | Cache de framework | Recriado automaticamente no boot |
+| `traefik_certs` | `cert.pem` + `key.pem` autoassinados | Gerado pelo `traefik-certs-init` na primeira execução |
 | `traefik_dynamic` | `dynamic.yml` gerenciado pelo traefik-manager | Compartilhado entre `traefik` e `traefik-manager` |
 | `traefik_logs` | Access logs do Traefik | Opcional, para debug |
 
@@ -256,12 +262,15 @@ Acesse após o deploy:
 
 | URL | Serviço |
 |---|---|
-| <http://localhost> | Aplicação via Traefik |
+| <https://localhost> | Aplicação via Traefik (HTTPS) ⚠️ aceite o aviso |
+| <http://localhost> | Redireciona automaticamente para HTTPS |
 | <http://localhost:8001> | Aplicação direta (sem proxy) |
 | <http://localhost:8080> | Traefik Dashboard |
 | <http://localhost:8090> | traefik-manager UI (senha: `admin`) |
 | <http://localhost:9001> | MinIO Console (minioadmin/minioadmin) |
 
+> **Aviso do browser:** Na primeira vez o browser exibe alerta de certificado autoassinado. Clique em **Avançado → Continuar para localhost**. O certificado é gerado automaticamente no boot pelo `traefik-certs-init` (alpine + openssl) e salvo no volume `traefik_certs` — **nenhuma instalação no host é necessária**.
+>
 > **Nota:** A porta `8090` é usada para o traefik-manager porque `5000` já está ocupada pelo registry local.
 
 ### 4. Verificar o status
@@ -289,13 +298,14 @@ docker stack ps laravel-demo --filter "name=laravel-demo_app"
 
 ### 6. Verificar o load balancing
 
-O Traefik usa o **swarm provider** (Traefik v3.6+) para descobrir cada réplica individualmente e faz **round-robin por requisição HTTP** — sem precisar de `Connection: close`:
+O Traefik usa o **swarm provider** (Traefik v3.6+) para descobrir cada réplica individualmente e faz **round-robin por requisição HTTPS** — sem precisar de `Connection: close`:
 
 ```bash
-# Porta 80 via Traefik — round-robin real por requisição entre as 3 réplicas
+# HTTPS via Traefik — round-robin real por requisição entre as 3 réplicas
 for i in $(seq 1 9); do
-  curl -sL http://localhost/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
+  curl -skL https://localhost/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
 done
+# -k ignora o aviso do certificado autoassinado no curl
 # Resultado esperado: 3 containers diferentes alternando a cada requisição
 ```
 
