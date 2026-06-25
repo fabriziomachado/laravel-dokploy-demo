@@ -1,0 +1,33 @@
+x-php-runner: &php-runner
+  build:
+    context: .
+    dockerfile: docker/php-cli/Dockerfile
+  working_dir: /app
+  volumes:
+    - .:/app
+    - composer_cache:/tmp/composer-cache
+
+services:
+  php:
+    <<: *php-runner
+
+  composer:
+    <<: *php-runner
+    entrypoint: ["composer"]
+
+  artisan:
+    <<: *php-runner
+    entrypoint: ["php", "artisan"]
+    environment:
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+
+  node:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - npm_cache:/root/.npm
+
+volumes:
+  composer_cache:
+  npm_cache:
