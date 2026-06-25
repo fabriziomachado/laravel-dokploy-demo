@@ -6,7 +6,12 @@
     </div>
 
     <div class="w-full max-w-lg mx-auto bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-        <h2 class="text-2xl font-bold mb-6 text-gray-800">Upload File</h2>
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-gray-800">Upload File</h2>
+            <p class="mt-2 text-xs text-gray-500">
+                Container: <span class="font-mono">{{ gethostname() ?: 'unknown' }}</span>
+            </p>
+        </div>
 
         <form action="{{ route('files.store') }}" method="POST" enctype="multipart/form-data">
             @csrf

@@ -46,7 +46,7 @@ services:
         traefik.http.services.traefik-manager.loadbalancer.server.port: "5000"
 
   app:
-    image: ${APP_IMAGE:-localhost:5000/laravel-dokploy-demo:local}
+    image: ${APP_IMAGE:-localhost:5000/laravel-dokploy-demo:current}
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
@@ -90,7 +90,7 @@ services:
         traefik.http.services.laravel.loadbalancer.server.port: "8001"
 
   migrate:
-    image: ${APP_IMAGE:-localhost:5000/laravel-dokploy-demo:local}
+    image: ${APP_IMAGE:-localhost:5000/laravel-dokploy-demo:current}
     command: php artisan migrate --force
     environment:
       APP_ENV: production

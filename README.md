@@ -95,12 +95,17 @@ Suba o registry antes da aplicacao:
 docker stack deploy -c docker-stack.registry.yml registry
 ```
 
-Gere, tagueie e publique a imagem no registry local:
+Gere, tagueie e publique a imagem no registry local. Para permitir rollback, use uma tag imutavel por deploy e mantenha `current` apenas como ponteiro para a ultima imagem publicada:
 
 ```bash
-docker build -t laravel-dokploy-demo:local .
-docker tag laravel-dokploy-demo:local localhost:5000/laravel-dokploy-demo:local
-docker push localhost:5000/laravel-dokploy-demo:local
+export DEPLOY_TAG="$(date +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)"
+
+docker build -t laravel-dokploy-demo:${DEPLOY_TAG} .
+docker tag laravel-dokploy-demo:${DEPLOY_TAG} localhost:5000/laravel-dokploy-demo:${DEPLOY_TAG}
+docker tag laravel-dokploy-demo:${DEPLOY_TAG} localhost:5000/laravel-dokploy-demo:current
+
+docker push localhost:5000/laravel-dokploy-demo:${DEPLOY_TAG}
+docker push localhost:5000/laravel-dokploy-demo:current
 ```
 
 Defina a `APP_KEY` que sera injetada nos servicos da stack, tambem sem depender do PHP local:
@@ -109,11 +114,51 @@ Defina a `APP_KEY` que sera injetada nos servicos da stack, tambem sem depender 
 export APP_KEY="$(docker compose -f docker-compose.commands.yml run --rm php php -r 'echo "base64:".base64_encode(random_bytes(32)).PHP_EOL;')"
 ```
 
-Por padrao, `docker-stack.local.yml` usa `APP_IMAGE=localhost:5000/laravel-dokploy-demo:local`. Para usar outro registry ou outra tag:
+Por padrao, `docker-stack.local.yml` usa `APP_IMAGE=localhost:5000/laravel-dokploy-demo:current`. Para deploys rastreaveis e com rollback, prefira fixar a tag imutavel gerada no build:
 
 ```bash
-export APP_IMAGE=localhost:5000/laravel-dokploy-demo:minha-tag
+export APP_IMAGE=localhost:5000/laravel-dokploy-demo:${DEPLOY_TAG}
 ```
+
+### Estrategia De Tags E Rollback
+
+A stack usa duas categorias de tags:
+
+- Tag imutavel de deploy: `YYYYmmddHHMMSS-<git-sha-curto>`, por exemplo `20260625141030-1a2b3c4`.
+- Tag movel: `current`, usada apenas como referencia rapida para a ultima imagem publicada.
+
+Em producao, evite fazer deploy por `current`, porque ela muda com o tempo. Para reproduzir ou reverter uma versao, use sempre uma tag imutavel.
+
+Para ver qual imagem esta rodando no servico da aplicacao:
+
+```bash
+docker service inspect laravel-demo_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+```
+
+Para listar as tags armazenadas no registry local:
+
+```bash
+curl http://localhost:5000/v2/laravel-dokploy-demo/tags/list
+```
+
+Para fazer rollback, escolha uma tag anterior e reaplique a stack com `APP_IMAGE` apontando para ela:
+
+```bash
+export APP_IMAGE=localhost:5000/laravel-dokploy-demo:TAG_ANTERIOR
+docker stack deploy -c docker-stack.local.yml laravel-demo
+```
+
+Rollback de imagem nao desfaz migracoes de banco. Se uma versao aplicou migracoes destrutivas, restaure o banco a partir de backup antes de voltar a imagem.
+
+### Teste Visual De Replica
+
+A pagina de upload mostra o hostname do container que atendeu a requisicao:
+
+```text
+http://laravel.localhost/files/create
+```
+
+Com mais de uma replica da aplicacao, recarregue a pagina algumas vezes e observe o valor `Container`. Ele ajuda a validar se o Traefik esta distribuindo as requisicoes entre replicas diferentes apos um novo deploy ou rollback.
 
 ### Deploy Da Stack
 
