@@ -6,16 +6,6 @@
 # across all app replicas automatically.
 # In Docker Compose: 'app' resolves directly to the single app container.
 
-http:
-  routers:
-    laravel:
-      rule: "Host(`localhost`)"
-      entrypoints:
-        - web
-      service: laravel
-  services:
-    laravel:
-      loadBalancer:
-        servers:
-          # 'app' resolves in both docker-compose and docker-stack (Swarm VIP)
-          - url: "http://app:8001"
+# Routes are now managed by Traefik swarm provider via deploy labels.
+# Use traefik-manager UI at :8090 to add custom routes/middlewares.
+http: {}

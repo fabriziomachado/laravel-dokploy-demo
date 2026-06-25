@@ -15,9 +15,13 @@ entryPoints:
     address: ":80"
 
 providers:
-  # File provider: routes managed by traefik-manager UI (http://localhost:5000)
-  # Directory mode: loads all .yml files in conf.d, hot-reloads on changes
-  # Note: docker provider is intentionally omitted — routes are defined via file provider
+  # Swarm provider: discovers services and load-balances per HTTP request
+  # Requires Docker socket mount. Fixed in Traefik v3.6.2 (issue #12253)
+  swarm:
+    exposedByDefault: false
+    network: laravel-demo_default
+
+  # File provider: fallback routes and managed by traefik-manager UI
   file:
     directory: /etc/traefik/conf.d
     watch: true

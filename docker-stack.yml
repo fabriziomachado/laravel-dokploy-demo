@@ -34,6 +34,7 @@ services:
       - "80:80"      # entry point HTTP
       - "8080:8080"  # dashboard
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # needed for swarm provider (works in Traefik v3.6+)
       - traefik_dynamic:/etc/traefik/conf.d   # dynamic configs gerenciados pelo traefik-manager
       - traefik_logs:/var/log/traefik
     configs:
@@ -109,6 +110,13 @@ services:
         parallelism: 1       # atualiza uma réplica por vez (rolling update)
         delay: 10s
         failure_action: rollback
+      labels:
+        # Swarm provider: Traefik discovers each replica individually
+        # enabling true HTTP round-robin (per-request, not per-connection)
+        - traefik.enable=true
+        - traefik.http.routers.laravel.rule=Host(`${APP_DOMAIN:-localhost}`)
+        - traefik.http.routers.laravel.entrypoints=web
+        - traefik.http.services.laravel.loadbalancer.server.port=8001
 
   postgres:
     image: postgres:16-alpine
