@@ -1,0 +1,207 @@
+services:
+  traefik:
+    image: traefik:v3
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --entrypoints.web.address=:80
+      - --providers.swarm=true
+      - --providers.swarm.endpoint=unix:///var/run/docker.sock
+      - --providers.swarm.exposedbydefault=false
+      - --providers.swarm.network=laravel-demo_public
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: ingress
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: ingress
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - public
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+  traefik-manager:
+    image: ghcr.io/chr0nzz/traefik-manager:latest
+    environment:
+      COOKIE_SECURE: "false"
+      TM_TRAEFIK_URL: http://traefik:8080
+      WEB_CONCURRENCY: "1"
+    volumes:
+      - traefik_manager_data:/app/data
+    networks:
+      - public
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.traefik-manager.rule: Host(`manager.localhost`)
+        traefik.http.routers.traefik-manager.entrypoints: web
+        traefik.http.routers.traefik-manager.service: traefik-manager
+        traefik.http.services.traefik-manager.loadbalancer.server.port: "5000"
+
+  app:
+    image: ${APP_IMAGE:-localhost:5000/laravel-dokploy-demo:local}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: http://laravel.localhost
+      APP_KEY: ${APP_KEY:?Set APP_KEY before deploying the stack}
+      TRUSTED_PROXIES: "*"
+      RUN_MIGRATIONS: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: laravel
+      DB_USERNAME: laravel
+      DB_PASSWORD: laravel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_CLIENT: phpredis
+      SESSION_DRIVER: redis
+      SESSION_SECURE_COOKIE: "false"
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      FILESYSTEM_DISK: s3
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_BUCKET: laravel-demo
+      AWS_ENDPOINT: http://minio:9000
+      AWS_URL: http://minio.localhost/laravel-demo
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
+    networks:
+      - public
+      - private
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.laravel.rule: Host(`laravel.localhost`)
+        traefik.http.routers.laravel.entrypoints: web
+        traefik.http.routers.laravel.service: laravel
+        traefik.http.services.laravel.loadbalancer.server.port: "8001"
+
+  migrate:
+    image: ${APP_IMAGE:-localhost:5000/laravel-dokploy-demo:local}
+    command: php artisan migrate --force
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: http://laravel.localhost
+      APP_KEY: ${APP_KEY:?Set APP_KEY before deploying the stack}
+      TRUSTED_PROXIES: "*"
+      RUN_MIGRATIONS: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: laravel
+      DB_USERNAME: laravel
+      DB_PASSWORD: laravel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_CLIENT: phpredis
+      SESSION_DRIVER: redis
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      FILESYSTEM_DISK: s3
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_BUCKET: laravel-demo
+      AWS_ENDPOINT: http://minio:9000
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
+    networks:
+      - private
+    deploy:
+      mode: replicated-job
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 10
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: laravel
+      POSTGRES_USER: laravel
+      POSTGRES_PASSWORD: laravel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - private
+    deploy:
+      replicas: 1
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - private
+    deploy:
+      replicas: 1
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - public
+      - private
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.minio.rule: Host(`minio.localhost`)
+        traefik.http.routers.minio.entrypoints: web
+        traefik.http.routers.minio.service: minio
+        traefik.http.services.minio.loadbalancer.server.port: "9000"
+        traefik.http.routers.minio-console.rule: Host(`minio-console.localhost`)
+        traefik.http.routers.minio-console.entrypoints: web
+        traefik.http.routers.minio-console.service: minio-console
+        traefik.http.services.minio-console.loadbalancer.server.port: "9001"
+
+  minio-create-bucket:
+    image: minio/mc:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done;
+        mc mb --ignore-existing local/laravel-demo;
+        mc anonymous set download local/laravel-demo
+    networks:
+      - private
+    deploy:
+      mode: replicated-job
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+
+networks:
+  public:
+    driver: overlay
+    attachable: true
+  private:
+    driver: overlay
+    attachable: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  traefik_manager_data:
