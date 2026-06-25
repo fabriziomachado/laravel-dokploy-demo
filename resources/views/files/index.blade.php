@@ -2,7 +2,12 @@
 
 @section('content')
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800">Uploaded Files</h1>
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Uploaded Files</h1>
+            <p class="mt-2 text-xs text-gray-500">
+                Container: <span class="font-mono">{{ gethostname() ?: 'unknown' }}</span>
+            </p>
+        </div>
         <a href="{{ route('files.create') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
             Upload New File
         </a>
