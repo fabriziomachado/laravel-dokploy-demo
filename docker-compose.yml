@@ -14,7 +14,7 @@ services:
   traefik-manager:
     image: ghcr.io/chr0nzz/traefik-manager:latest
     ports:
-      - "5000:5000"
+      - "8090:5000"
     environment:
       TRAEFIK_API_URL: http://traefik:8080
       DOMAINS: localhost

@@ -62,7 +62,7 @@ pronta para rodar localmente via Docker Compose e para deploy no
 | Serviço | Imagem | Porta | Finalidade |
 |---|---|---|---|
 | `traefik` | `traefik:v3.3` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + load balancer |
-| `traefik-manager` | `ghcr.io/chr0nzz/traefik-manager` | `5000` | UI para gerenciar rotas e middlewares |
+| `traefik-manager` | `ghcr.io/chr0nzz/traefik-manager` | `8090` | UI para gerenciar rotas e middlewares |
 | `app` | Build do `Dockerfile` | `8001` (direto), `80` (via Traefik) | Aplicação Laravel (FrankenPHP) |
 | `postgres` | `postgres:16-alpine` | interno | Banco de dados |
 | `minio` | `minio/minio:latest` | `9000` (API), `9001` (Console) | Storage S3-compatível |
@@ -129,7 +129,7 @@ docker compose run --rm --entrypoint php app artisan key:generate --show
    - Aplicação via Traefik (load balancing por requisição): <http://localhost>
    - Aplicação direta (sem proxy): <http://localhost:8001>
    - Traefik Dashboard: <http://localhost:8080>
-   - traefik-manager: <http://localhost:5000> (senha: `admin`)
+   - traefik-manager: <http://localhost:8090> (senha: `admin`)
    - MinIO Console: <http://localhost:9001> (usuário: `minioadmin` / senha: `minioadmin`)
 
 Comandos úteis:
@@ -242,11 +242,26 @@ docker push localhost:5000/laravel-app:latest
 
 ### 3. Fazer o deploy como stack
 
-Crie um arquivo `docker-stack.yml` baseado no `docker-compose.yml`, substituindo `build: .` pela imagem do registry e adicionando as variáveis diretamente:
+Exporte as variáveis obrigatórias e faça o deploy com o `docker-stack.yml` (já inclui Traefik, traefik-manager, PostgreSQL e MinIO):
 
 ```bash
+export APP_KEY=base64:SUA_CHAVE_AQUI
+export DB_PASSWORD=sua_senha
+
 docker stack deploy -c docker-stack.yml laravel-demo
 ```
+
+Acesse após o deploy:
+
+| URL | Serviço |
+|---|---|
+| <http://localhost> | Aplicação via Traefik |
+| <http://localhost:8001> | Aplicação direta (sem proxy) |
+| <http://localhost:8080> | Traefik Dashboard |
+| <http://localhost:8090> | traefik-manager UI (senha: `admin`) |
+| <http://localhost:9001> | MinIO Console (minioadmin/minioadmin) |
+
+> **Nota:** A porta `8090` é usada para o traefik-manager porque `5000` já está ocupada pelo registry local.
 
 ### 4. Verificar o status
 
@@ -273,22 +288,41 @@ docker stack ps laravel-demo --filter "name=laravel-demo_app"
 
 ### 6. Verificar o load balancing
 
-Com o Traefik, o load balancing acontece **por requisição HTTP** (não por conexão TCP). Acesse `http://localhost` e veja o container ID no topo da página mudar a cada requisição:
+O Traefik roteia `localhost:80` → Swarm VIP `app:8001` → as 3 réplicas via IPVS (LB por conexão). Para ver o round-robin por conexão, use a porta direta:
 
 ```bash
-# Via curl na porta 80 (Traefik) — cada requisição vai para uma réplica diferente
+# Porta 8001 (sem Traefik) — demonstra round-robin entre réplicas
 for i in $(seq 1 9); do
-  curl -sL http://localhost/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
+  curl -sL http://localhost:8001/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
 done
-# Resultado esperado: round-robin perfeito entre os 3 containers
+# Resultado esperado: os 3 containers alternando
 ```
 
-> **Différence importante:** Na porta `8001` (sem Traefik), o load balancing é por conexão TCP — o browser reutiliza a mesma conexão e sempre cai no mesmo container. Na porta `80` via Traefik, cada requisição HTTP é distribuída independentemente.
+Através do Traefik na porta 80, o ráfego passa pelo Swarm VIP que faz IPVS connection-level load balancing. O container mostrado pode ser sempre o mesmo numa sessão, mas **muda entre sessões diferentes**.
 
-**traefik-manager** está disponível em `http://localhost:5000` (senha: `admin`). Nele você pode:
-- Ver todas as rotas ativas descobertas pelo Swarm
-- Adicionar middlewares (rate limit, auth, CORS, etc.) sem tocar em YAML
-- Monitorar a saúde dos serviços em tempo real
+### traefik-manager
+
+Acesse <http://localhost:8090> para gerenciar rotas e middlewares via UI:
+
+| Campo | Valor |
+|---|---|
+| URL | <http://localhost:8090> |
+| Usuário | `admin` |
+| Senha | `admin` |
+
+> A senha padrão é `admin` definida via `ADMIN_PASSWORD: ${TM_PASSWORD:-admin}` no `docker-stack.yml`.
+> Para alterar, exporte `TM_PASSWORD=sua_senha` antes do deploy.
+
+```bash
+# Verificar status e rotas ativas
+curl -s http://localhost:8080/api/http/routers | python3 -m json.tool | grep -E '"name"|"rule"|"status"'
+```
+
+Na UI do traefik-manager você pode:
+- Ver todas as rotas ativas (`laravel@file` → `Host(localhost)`)
+- Adicionar middlewares (rate limit, auth, CORS, headers) sem editar YAML
+- Monitorar saúde dos backends em tempo real
+- Fazer backup e restaurar configurações
 
 ### 7. Deploy e rollback com versionamento por Git SHA
 
@@ -344,4 +378,4 @@ docker rm -f registry
 | `MINIO_BUCKET` | Não | `laravel` | Nome do bucket padrão |
 | `TRUSTED_PROXIES` | Não | `*` | Proxies confiáveis |
 | `APP_DOMAIN` | Não | `localhost` | Domínio configurado no Traefik para roteamento |
-| `TM_PASSWORD` | Não | `admin` | Senha do traefik-manager |
+| `TM_PASSWORD` | Não | `admin` | Senha do traefik-manager (acesso em `:8090`) |
