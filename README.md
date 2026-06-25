@@ -147,6 +147,22 @@ docker service logs --tail 120 laravel-demo_traefik-manager | grep 'Password:'
 
 Use a senha mais recente da task em execucao. Apos o primeiro login, a interface pode solicitar a definicao de uma senha permanente.
 
+### Acesso Ao MinIO
+
+O MinIO expõe a API S3 e o console web:
+
+- API S3: `http://minio.localhost`
+- Console web: `http://minio-console.localhost`
+
+Credenciais padrao da stack:
+
+```text
+Usuario: minioadmin
+Senha: minioadmin
+```
+
+A aplicacao usa o bucket `laravel-demo`. Se o job `laravel-demo_minio-create-bucket` nao tiver completado, crie esse bucket manualmente pelo console ou reaplique a stack corrigida.
+
 ## Migracoes E Escala
 
 As replicas da aplicacao sobem com `RUN_MIGRATIONS=false`. A stack define um servico `migrate` em modo `replicated-job`, com uma unica tarefa, para evitar que varias replicas executem `php artisan migrate --force` ao mesmo tempo.
