@@ -10,34 +10,42 @@ pronta para rodar localmente via Docker Compose e para deploy no
 - **FrankenPHP** servindo a aplicação na porta `8001` (config no `Caddyfile`)
 - **PostgreSQL 16** como banco de dados, persistido em volume Docker
 - **MinIO** como storage de arquivos (S3-compatível), persistido em volume Docker
+- **Traefik v3** como reverse proxy com load balancing HTTP por requisição
+- **traefik-manager** como UI web para gerenciar rotas e middlewares do Traefik
 - **Docker / Docker Compose** para build e execução local
 - **Dokploy + Docker Swarm** para deploy remoto
 
 ## Arquitetura
 
 ```
-┌─────────────────────────────────────────────┐
-│           MÁQUINA MANAGER (Dokploy)         │
-│                                             │
-│  ┌─────────┐  ┌──────────┐  ┌───────────┐  │
-│  │ Dokploy │  │  Builder │  │ Registry  │  │
-│  │  (UI)   │→ │ (build)  │→ │:5000(local│  │
-│  └─────────┘  └──────────┘  └─────┬─────┘  │
-│                                   │        │
-│  ┌────────────────────────────────▼──────┐ │
-│  │         Docker Swarm Manager          │ │
-│  │    (orquestra todos os nós)           │ │
-│  └────────────────────────────────┬──────┘ │
-└───────────────────────────────────┼────────┘
-                                    │ docker stack deploy
-              ┌─────────────────────┼──────────────────────┐
-              │                     │                      │
-    ┌─────────▼──────┐   ┌──────────▼─────┐   ┌───────────▼────┐
-    │  WORKER NODE 1 │   │  WORKER NODE 2 │   │  WORKER NODE 3 │
-    │                │   │                │   │                │
-    │  [app]         │   │  [app]         │   │  [postgres]    │
-    │  [minio]       │   │                │   │                │
-    └────────────────┘   └────────────────┘   └────────────────┘
+┌─────────────────────────────────────────────────┐
+│            MÁQUINA MANAGER (Dokploy)            │
+│                                                 │
+│  ┌─────────┐  ┌──────────┐  ┌───────────┐      │
+│  │ Dokploy │  │  Builder │  │ Registry  │      │
+│  │  (UI)   │→ │ (build)  │→ │:5000(local│      │
+│  └─────────┘  └──────────┘  └─────┬─────┘      │
+│                                   │            │
+│  ┌──────────────────────────────────────────┐  │
+│  │           Docker Swarm Manager           │  │
+│  └────────────────────┬─────────────────────┘  │
+│                       │ docker stack deploy     │
+│  ┌────────────────────▼─────────────────────┐  │
+│  │  Traefik :80  ←  load balancer HTTP      │  │
+│  │  traefik-manager :5000  ←  UI de rotas   │  │
+│  └────────────────────┬─────────────────────┘  │
+└───────────────────────┼─────────────────────────┘
+                        │ round-robin por requisição
+         ┌──────────────┼──────────────┐
+         │              │              │
+    ┌────▼───┐     ┌────▼───┐     ┌───▼────┐
+    │ app.1  │     │ app.2  │     │ app.3  │
+    │ :8001  │     │ :8001  │     │ :8001  │
+    └────────┘     └────────┘     └────────┘
+         │              │              │
+    ┌────▼──────────────▼──────────────▼────┐
+    │        postgres    minio              │
+    └───────────────────────────────────────┘
 ```
 
 **Fluxo de deploy:**
@@ -53,7 +61,9 @@ pronta para rodar localmente via Docker Compose e para deploy no
 
 | Serviço | Imagem | Porta | Finalidade |
 |---|---|---|---|
-| `app` | Build do `Dockerfile` | `8001` | Aplicação Laravel (FrankenPHP) |
+| `traefik` | `traefik:v3.3` | `80` (HTTP), `8080` (Dashboard) | Reverse proxy + load balancer |
+| `traefik-manager` | `ghcr.io/chr0nzz/traefik-manager` | `5000` | UI para gerenciar rotas e middlewares |
+| `app` | Build do `Dockerfile` | `8001` (direto), `80` (via Traefik) | Aplicação Laravel (FrankenPHP) |
 | `postgres` | `postgres:16-alpine` | interno | Banco de dados |
 | `minio` | `minio/minio:latest` | `9000` (API), `9001` (Console) | Storage S3-compatível |
 | `minio-init` | `minio/mc:latest` | — | Cria o bucket na primeira vez |
@@ -109,14 +119,17 @@ docker compose run --rm --entrypoint php app artisan key:generate --show
    sed -i "s|^APP_URL=.*|APP_URL=http://localhost:8001|" .env
    ```
 
-3. Suba todos os serviços (app + postgres + minio):
+3. Suba todos os serviços (app + postgres + minio + traefik + traefik-manager):
 
    ```bash
    docker compose up -d --build
    ```
 
 4. Acesse:
-   - Aplicação: <http://localhost:8001>
+   - Aplicação via Traefik (load balancing por requisição): <http://localhost>
+   - Aplicação direta (sem proxy): <http://localhost:8001>
+   - Traefik Dashboard: <http://localhost:8080>
+   - traefik-manager: <http://localhost:5000> (senha: `admin`)
    - MinIO Console: <http://localhost:9001> (usuário: `minioadmin` / senha: `minioadmin`)
 
 Comandos úteis:
@@ -161,7 +174,13 @@ No boot, o `entrypoint.sh` aguarda o PostgreSQL ficar disponível, roda as migra
    TRUSTED_PROXIES=*
    ```
 
-4. Configure o **domínio** apontando para a porta **`8001`**
+4. Configure o **domínio** apontando para a porta **`80`** (Traefik)
+
+   > Em produção o Traefik recebe na porta 80/443 e distribui as requisições entre as réplicas do `app`. Configure `APP_DOMAIN` com o domínio real para que o roteamento Traefik funcione:
+   >
+   > ```env
+   > APP_DOMAIN=meuapp.exemplo.com
+   > ```
 
 5. Clique em **Deploy**
 
@@ -175,9 +194,11 @@ No boot, o `entrypoint.sh` aguarda o PostgreSQL ficar disponível, roda as migra
 
 | Volume | Conteúdo | Observação |
 |---|---|---|
-| `postgres_data` | Dados do banco | Fica no nó onde o postgres está agendado |
-| `minio_data` | Arquivos (uploads) | Fica no nó onde o minio está agendado |
+| `postgres_data` | Dados do banco | Fixo no manager via placement constraint |
+| `minio_data` | Arquivos (uploads) | Fixo no manager via placement constraint |
 | `laravel_storage` | Cache de framework | Recriado automaticamente no boot |
+| `traefik_dynamic` | `dynamic.yml` gerenciado pelo traefik-manager | Compartilhado entre `traefik` e `traefik-manager` |
+| `traefik_logs` | Access logs do Traefik | Opcional, para debug |
 
 > **Importante em multi-nó:** Volumes locais não são compartilhados entre nós. Para garantir que `postgres` e `minio` sempre rodem no mesmo nó (com seus dados), configure constraints de placement no Dokploy ou no `docker-compose.yml`:
 >
@@ -252,14 +273,22 @@ docker stack ps laravel-demo --filter "name=laravel-demo_app"
 
 ### 6. Verificar o load balancing
 
-Acesse http://localhost:8001 e recarregue a página várias vezes — o identificador do container no topo da página muda conforme o Swarm distribui as requisições:
+Com o Traefik, o load balancing acontece **por requisição HTTP** (não por conexão TCP). Acesse `http://localhost` e veja o container ID no topo da página mudar a cada requisição:
 
 ```bash
-# Via curl: dispara 6 requisições e mostra qual container respondeu cada uma
-for i in $(seq 1 6); do
-  curl -sc /dev/null http://localhost:8001 | grep -o '[a-f0-9]\{12\}' | head -1
+# Via curl na porta 80 (Traefik) — cada requisição vai para uma réplica diferente
+for i in $(seq 1 9); do
+  curl -sL http://localhost/files | grep -o 'font-bold">[^<]*' | sed 's/font-bold">//'
 done
+# Resultado esperado: round-robin perfeito entre os 3 containers
 ```
+
+> **Différence importante:** Na porta `8001` (sem Traefik), o load balancing é por conexão TCP — o browser reutiliza a mesma conexão e sempre cai no mesmo container. Na porta `80` via Traefik, cada requisição HTTP é distribuída independentemente.
+
+**traefik-manager** está disponível em `http://localhost:5000` (senha: `admin`). Nele você pode:
+- Ver todas as rotas ativas descobertas pelo Swarm
+- Adicionar middlewares (rate limit, auth, CORS, etc.) sem tocar em YAML
+- Monitorar a saúde dos serviços em tempo real
 
 ### 7. Deploy e rollback com versionamento por Git SHA
 
@@ -314,3 +343,5 @@ docker rm -f registry
 | `MINIO_ROOT_PASSWORD` | Não | `minioadmin` | Senha admin do MinIO |
 | `MINIO_BUCKET` | Não | `laravel` | Nome do bucket padrão |
 | `TRUSTED_PROXIES` | Não | `*` | Proxies confiáveis |
+| `APP_DOMAIN` | Não | `localhost` | Domínio configurado no Traefik para roteamento |
+| `TM_PASSWORD` | Não | `admin` | Senha do traefik-manager |
