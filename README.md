@@ -152,9 +152,10 @@ Rollback de imagem nao desfaz migracoes de banco. Se uma versao aplicou migracoe
 
 ### Teste Visual De Replica
 
-A pagina de upload mostra o hostname do container que atendeu a requisicao:
+As paginas de listagem e upload mostram o hostname do container que atendeu a requisicao:
 
 ```text
+http://laravel.localhost/files
 http://laravel.localhost/files/create
 ```
 
@@ -191,6 +192,8 @@ docker service logs --tail 120 laravel-demo_traefik-manager | grep 'Password:'
 ```
 
 Use a senha mais recente da task em execucao. Apos o primeiro login, a interface pode solicitar a definicao de uma senha permanente.
+
+Nesta simulacao, o Traefik Manager e iniciado com um unico worker do Gunicorn. A imagem padrao usa dois workers, mas isso pode gerar uma condicao de corrida na criacao do arquivo `manager.yml` e deixar o servico em crash loop.
 
 ### Acesso Ao MinIO
 
