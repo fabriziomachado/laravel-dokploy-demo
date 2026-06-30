@@ -1,0 +1,77 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    command: ["php", "artisan", "migrate", "--force"]
+    restart: "no"
+    environment: &laravel-env
+      APP_NAME: ${APP_NAME:-Laravel}
+      APP_ENV: ${APP_ENV:-production}
+      APP_KEY: ${APP_KEY}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_CONNECTION: pgsql
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SESSION_DRIVER: ${SESSION_DRIVER:-database}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      CACHE_STORE: ${CACHE_STORE:-database}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - laravel_storage:/app/storage/app
+    environment: *laravel-env
+    expose:
+      - "8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - laravel_storage:/app/storage/app
+    environment: *laravel-env
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *laravel-env
+    restart: unless-stopped
+
+volumes:
+  laravel_storage:
