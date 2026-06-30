@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessFileUpload;
 use App\Models\File;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -36,10 +37,12 @@ class FileController extends Controller
 // download is via public link.
 // Let's use storage path and a download route to keep it secure/managed.
 
-        File::create([
+        $file = File::create([
             'original_name' => $originalName,
             'path' => $path,
         ]);
+
+        ProcessFileUpload::dispatch($file);
 
         return redirect()->route('files.index')->with('success', 'File uploaded successfully.');
     }

@@ -8,6 +8,7 @@ RUN install-php-extensions \
     json \
     mbstring \
     pdo \
+    pdo_pgsql \
     pdo_sqlite \
     tokenizer \
     xml \

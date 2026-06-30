@@ -1,20 +1,11 @@
 #!/bin/sh
 set -e
 
-# Create database if not exists
-if [ ! -f /app/storage/database.sqlite ]; then
-    echo "Creating database.sqlite..."
-    touch /app/storage/database.sqlite
-fi
+echo "Aguardando Postgres em ${DB_HOST}:${DB_PORT}..."
+until php -r "new PDO('pgsql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT'), getenv('DB_USERNAME'), getenv('DB_PASSWORD'));" 2>/dev/null; do
+  sleep 2
+done
 
-# Run migrations
-echo "Running migrations..."
-php artisan migrate --force
-
-# Cache config
-echo "Caching configuration..."
 php artisan optimize
 
-# Start FrankenPHP
-echo "Starting FrankenPHP..."
 exec "$@"

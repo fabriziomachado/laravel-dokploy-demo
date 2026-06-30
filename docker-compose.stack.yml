@@ -1,0 +1,135 @@
+services:
+  app:
+    image: ghcr.io/fabriziomachado/laravel-dokploy-demo:${IMAGE_TAG:-latest}
+    expose:
+      - "8001"
+    environment:
+      APP_KEY: ${APP_KEY}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      SESSION_DRIVER: ${SESSION_DRIVER:-database}
+      CACHE_STORE: ${CACHE_STORE:-database}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-s3}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_BUCKET: ${AWS_BUCKET}
+      AWS_ENDPOINT: ${AWS_ENDPOINT}
+      AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT:-true}
+    networks:
+      - dokploy-network
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit((int)!@file_get_contents('http://localhost:8001/up'));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  worker:
+    image: ghcr.io/fabriziomachado/laravel-dokploy-demo:${IMAGE_TAG:-latest}
+    command: ["php", "artisan", "queue:work", "database", "--sleep=3", "--tries=3", "--max-time=3600"]
+    environment:
+      APP_KEY: ${APP_KEY}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL}
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      SESSION_DRIVER: ${SESSION_DRIVER:-database}
+      CACHE_STORE: ${CACHE_STORE:-database}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-s3}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_BUCKET: ${AWS_BUCKET}
+      AWS_ENDPOINT: ${AWS_ENDPOINT}
+      AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT:-true}
+    networks:
+      - dokploy-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  migrate:
+    image: ghcr.io/fabriziomachado/laravel-dokploy-demo:${IMAGE_TAG:-latest}
+    command: ["php", "artisan", "migrate", "--force"]
+    environment:
+      APP_KEY: ${APP_KEY}
+      APP_ENV: ${APP_ENV:-production}
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    networks:
+      - dokploy-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - dokploy-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  createbuckets:
+    image: minio/mc:latest
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do sleep 2; done;
+      /usr/bin/mc mb -p local/$${AWS_BUCKET};
+      /usr/bin/mc anonymous set download local/$${AWS_BUCKET};
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      AWS_BUCKET: ${AWS_BUCKET}
+    networks:
+      - dokploy-network
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+
+volumes:
+  minio_data:
+
+networks:
+  dokploy-network:
+    external: true
