@@ -1,0 +1,10 @@
+# Build/push da imagem Laravel (usado pelo comando customizado do Dokploy).
+# Dokploy executa: docker <subcomando> — não aceita shell scripts.
+#
+# Advanced → Command (substitua STACK_NAME pelo App Name do serviço no Dokploy):
+# compose -f docker-compose.build.yml build && compose -f docker-compose.build.yml push && stack deploy -c docker-compose.stack.yml STACK_NAME --prune --with-registry-auth
+
+services:
+  app:
+    build: .
+    image: ghcr.io/fabriziomachado/laravel-dokploy-demo:${IMAGE_TAG:-latest}

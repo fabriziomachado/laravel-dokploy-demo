@@ -1,4 +1,7 @@
 #!/bin/sh
+# Deploy manual (SSH no servidor Dokploy). NÃO use no campo Advanced → Command:
+# o Dokploy sempre roda "docker <comando>" e não executa shell scripts.
+# No Dokploy, use o comando documentado em docker-compose.build.yml.
 set -e
 
 STACK_NAME="${1:?Usage: dokploy-deploy.sh <stack-name>}"
