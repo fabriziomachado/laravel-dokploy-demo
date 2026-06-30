@@ -1,0 +1,20 @@
+# Runner one-shot: build + push + stack deploy com IMAGE_TAG automático.
+# Usa o Docker do host via socket (credenciais GHCR do servidor Dokploy).
+#
+# Dokploy → Advanced → Command (substitua se o App Name for outro):
+# compose -f docker-compose.deploy.yml run --rm deploy-runner
+#
+# STACK_NAME vem de COMPOSE_PROJECT_NAME (injetado pelo Dokploy).
+# IMAGE_TAG opcional na Environment; senão usa timestamp (YYYYMMDDHHMMSS).
+
+services:
+  deploy-runner:
+    image: docker:27-cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/app
+    working_dir: /app
+    environment:
+      STACK_NAME: ${COMPOSE_PROJECT_NAME}
+      IMAGE_TAG: ${IMAGE_TAG:-}
+    entrypoint: ["sh", "/app/scripts/dokploy-stack-deploy.sh"]
