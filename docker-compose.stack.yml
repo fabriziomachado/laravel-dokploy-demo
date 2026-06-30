@@ -91,45 +91,6 @@ services:
         condition: on-failure
         max_attempts: 5
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - minio_data:/data
-    networks:
-      - dokploy-network
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-
-  createbuckets:
-    image: minio/mc:latest
-    entrypoint: >
-      /bin/sh -c "
-      until /usr/bin/mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do sleep 2; done;
-      /usr/bin/mc mb -p local/$${AWS_BUCKET};
-      /usr/bin/mc anonymous set download local/$${AWS_BUCKET};
-      exit 0;
-      "
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      AWS_BUCKET: ${AWS_BUCKET}
-    networks:
-      - dokploy-network
-    deploy:
-      restart_policy:
-        condition: on-failure
-        max_attempts: 5
-
-volumes:
-  minio_data:
-
 networks:
   dokploy-network:
     external: true
